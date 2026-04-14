@@ -1,0 +1,14 @@
+package com.example.service;
+import com.example.model.Cart;
+import com.example.model.CartItem;
+import java.util.List;
+
+public interface cartservice {
+    Cart createCart(Integer userId);
+
+    Cart getCartById(Integer cartId);
+
+    Cart addItemToCart(Integer cartId, CartItem item);
+
+    List<CartItem> getCartItems(Integer cartId);
+}

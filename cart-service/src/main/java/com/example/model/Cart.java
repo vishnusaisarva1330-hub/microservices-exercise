@@ -4,6 +4,8 @@ package com.example.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.List;
+
 @Entity
 @Table(name = "cart")
 @Data
@@ -17,4 +19,9 @@ public class Cart {
     private Long id;
 
     private Long userId;
+
+    public List<CartItem> getItems() {
+
+        return null;
+    }
 }

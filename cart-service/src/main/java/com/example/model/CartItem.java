@@ -21,5 +21,9 @@ public class CartItem {
     private Long productId;
 
     private Integer quantity;
+
+    public void setCart(Cart cart) {
+
+    }
 }
 
