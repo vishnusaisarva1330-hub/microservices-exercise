@@ -1,6 +1,7 @@
 package com.example.controller;
 import com.example.service.productservice;
 import com.example.entity.Product;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 @RestController
@@ -12,7 +13,16 @@ public class productcontroller {
     public productcontroller(productservice productService) {
         this.productService = productService;
     }
-
+    @GetMapping("/paged")
+    public Page<Product> getProducts(@RequestParam int page,
+                                      @RequestParam int size,
+                                      @RequestParam String sortBy) {
+        return productService.getProducts(page, size, sortBy);
+    }
+    @GetMapping("/available")
+    public List<String> getAvailableProducts() {
+        return productService.getAvailableProductNames();
+    }
     // ✅ CREATE PRODUCT
     @PostMapping
     public Product createProduct(@RequestBody Product product) {

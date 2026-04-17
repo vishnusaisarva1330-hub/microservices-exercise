@@ -1,8 +1,10 @@
 package com.example.service;
 import com.example.entity.Product;
 import com.example.repository.ProductRepository;
+import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.stream.Collectors;
 @Service
 
 public class productserviceImpl implements productservice {
@@ -12,6 +14,22 @@ public class productserviceImpl implements productservice {
     public productserviceImpl(ProductRepository productRepository) {
         this.productRepository = productRepository;
     }
+    public Page<Product> getProducts(int page, int size, String sortBy) {
+         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy).ascending());
+//        Pageable pageable = PageRequest.of(page, size);
+//        Page<Product> productPage = productRepository.findAll(pageable);
+//        return (Page<Product>) productPage.getContent();
+    return productRepository.findAll(pageable);
+    }
+
+    public List<String> getAvailableProductNames() {
+        return productRepository.findAll()
+                 .stream()
+                .filter(product -> product.getStock() > 0)
+                .map(Product::getName)
+                .collect(Collectors.toList());
+    }
+
 
     @Override
     public Product createProduct(Product product) {
