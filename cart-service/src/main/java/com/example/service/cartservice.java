@@ -11,4 +11,6 @@ public interface cartservice {
     Cart addItemToCart(Integer cartId, CartItem item);
 
     List<CartItem> getCartItems(Integer cartId);
+
+    void addToCart(Integer cartId, Integer productId, Integer quantity);
 }
