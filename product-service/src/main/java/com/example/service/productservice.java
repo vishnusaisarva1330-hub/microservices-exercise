@@ -6,6 +6,8 @@ import java.util.List;
 
 public interface productservice {
 
+
+
     Product createProduct(Product product);
 
     Product getProductById(Integer id);
@@ -17,4 +19,7 @@ public interface productservice {
     Page<Product> getProducts(int page, int size, String sortBy);
 
     List<String> getAvailableProductNames();
+
+    List<Product> getProductsByPriceGreaterThan(Double price);
+
 }

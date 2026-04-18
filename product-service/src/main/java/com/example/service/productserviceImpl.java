@@ -31,6 +31,7 @@ public class productserviceImpl implements productservice {
     }
 
 
+
     @Override
     public Product createProduct(Product product) {
         return productRepository.save(product);
@@ -51,4 +52,9 @@ public class productserviceImpl implements productservice {
         Product product = getProductById(productId);
         return product != null && product.getStock() >= quantity;
     }
+
+    @Override
+    public List<Product> getProductsByPriceGreaterThan(Double price) {
+        return productRepository.findProductsByPriceGreaterThan(price);}
+
 }

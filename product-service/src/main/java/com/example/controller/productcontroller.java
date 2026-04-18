@@ -13,6 +13,8 @@ public class productcontroller {
     public productcontroller(productservice productService) {
         this.productService = productService;
     }
+
+
     @GetMapping("/paged")
     public Page<Product> getProducts(@RequestParam int page,
                                       @RequestParam int size,
@@ -23,6 +25,10 @@ public class productcontroller {
     public List<String> getAvailableProducts() {
         return productService.getAvailableProductNames();
     }
+
+    @GetMapping("/price-above")
+    public List<Product> getProductsByPriceGreaterThan(@RequestParam Double price) {
+        return productService.getProductsByPriceGreaterThan(price);}
     // ✅ CREATE PRODUCT
     @PostMapping
     public Product createProduct(@RequestBody Product product) {
