@@ -2,6 +2,7 @@
 package com.example.service;
 
 import com.example.dto.ProductDTO;
+import com.example.dto.cartevent;
 import com.example.model.Cart;
 import com.example.model.CartItem;
 import com.example.repository.cartrepository;
@@ -14,17 +15,22 @@ import java.util.List;
 @Service
 public class cartserviceimpl implements cartservice {
 
+
     private final cartrepository cartRepository;
     private final cartitemrepository cartItemRepository;
     private final WebClient webClient;
+    private final kafkaproducerservice kafkaProducerService;
 
-    // ✅ ONLY ONE constructor
+    // ✅ FIXED constructor
     public cartserviceimpl(cartrepository cartRepository,
                            cartitemrepository cartItemRepository,
-                           WebClient webClient) {
+                           WebClient webClient,
+                           kafkaproducerservice kafkaProducerService) {
+
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.webClient = webClient;
+        this.kafkaProducerService = kafkaProducerService;
     }
 
     // ✅ FIXED (no generics misuse)
@@ -51,13 +57,15 @@ public class cartserviceimpl implements cartservice {
 
     // ✅ Add to cart (main logic)
     public void addToCart(Integer cartId, Integer productId, Integer quantity) {
-
+        System.out.println("STEP 1: Start");
         validateProduct(productId, quantity);
+        System.out.println("STEP 2: Product OK");
 
         Cart cart = getCartById(cartId);
         if (cart == null) {
             throw new RuntimeException("Cart with ID " + cartId + " not found.");
         }
+        System.out.println("STEP 3: Cart OK");
 
         CartItem item = new CartItem();
         item.setProductId(Long.valueOf(productId));
@@ -65,6 +73,11 @@ public class cartserviceimpl implements cartservice {
         item.setCart(cart);
 
         cartItemRepository.save(item);
+        System.out.println("STEP 4: Item saved");
+        cartevent event = new cartevent(cartId, productId, quantity);
+//        kafkaProducerService.sendCartEvent(event);
+        System.out.println("STEP 5: Kafka sent");
+
     }
 
     @Override

@@ -21,12 +21,17 @@ public class cartcontroller {
 //    }
 
     @PostMapping("/add")
-    public String addToCart(@RequestParam Integer cartId,
-                            @RequestParam Integer productId,
-                            @RequestParam Integer quantity) {
-
-        cartService.addToCart(cartId, productId, quantity);
+//    public String addToCart(@RequestBody CartItem item) {
+//        cartService.addToCart(Math.toIntExact(item.getCartId()),
+//                Math.toIntExact(item.getProductId()),
+//                item.getQuantity());
+//        return "Item added to cart successfully";
+    public String addToCart(@RequestBody CartItem item) {
+        cartService.addToCart(Math.toIntExact(item.getCartId()),
+                Math.toIntExact(item.getProductId()),
+                item.getQuantity());
         return "Item added to cart successfully";
+
     }
 
     @PostMapping("/create")
