@@ -11,74 +11,91 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class cartserviceimpl implements cartservice {
-
 
     private final cartrepository cartRepository;
     private final cartitemrepository cartItemRepository;
     private final WebClient webClient;
     private final kafkaproducerservice kafkaProducerService;
 
-    // ✅ FIXED constructor
+    // ✅ Constructor using WebClient.Builder
     public cartserviceimpl(cartrepository cartRepository,
                            cartitemrepository cartItemRepository,
-                           WebClient webClient,
+                           WebClient.Builder webClientBuilder,
                            kafkaproducerservice kafkaProducerService) {
 
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
-        this.webClient = webClient;
+        this.webClient = webClientBuilder.baseUrl("http://localhost:8081").build();
         this.kafkaProducerService = kafkaProducerService;
     }
 
-    // ✅ FIXED (no generics misuse)
-    public ProductDTO getProductById(Integer productId) {
-        return webClient.get()
-                .uri("/api/products/{id}", productId) // baseUrl already set
-                .retrieve()
-                .bodyToMono(ProductDTO.class)
-                .block();
+    // ✅ Async Product Fetch
+    public CompletableFuture<ProductDTO> getProductAsync(Integer productId) {
+        return CompletableFuture.supplyAsync(() ->
+                webClient.get()
+                        .uri("/api/products/" + productId)
+                        .retrieve()
+                        .bodyToMono(ProductDTO.class)
+                        .block()
+        );
     }
 
-    // ✅ Validation logic
-    public void validateProduct(Integer productId, Integer quantity) {
-        ProductDTO product = getProductById(productId);
-
-        if (product == null) {
-            throw new RuntimeException("Product with ID " + productId + " not found.");
-        }
-
-        if (product.getStock() < quantity) {
-            throw new RuntimeException("Insufficient stock for product ID " + productId);
-        }
-    }
-
-    // ✅ Add to cart (main logic)
+    // ✅ Main Method (Async + DB + Kafka)
+    @Override
     public void addToCart(Integer cartId, Integer productId, Integer quantity) {
+
         System.out.println("STEP 1: Start");
-        validateProduct(productId, quantity);
-        System.out.println("STEP 2: Product OK");
 
-        Cart cart = getCartById(cartId);
-        if (cart == null) {
-            throw new RuntimeException("Cart with ID " + cartId + " not found.");
-        }
-        System.out.println("STEP 3: Cart OK");
+        CompletableFuture<ProductDTO> productFuture = getProductAsync(productId);
 
-        CartItem item = new CartItem();
-        item.setProductId(Long.valueOf(productId));
-        item.setQuantity(quantity);
-        item.setCart(cart);
+        CompletableFuture<Boolean> stockFuture = productFuture.thenApplyAsync(product -> {
+            if (product == null) {
+                throw new RuntimeException("Product not found");
+            }
+            return product.getStock() >= quantity;
+        });
 
-        cartItemRepository.save(item);
-        System.out.println("STEP 4: Item saved");
-        cartevent event = new cartevent(cartId, productId, quantity);
-//        kafkaProducerService.sendCartEvent(event);
-        System.out.println("STEP 5: Kafka sent");
+        CompletableFuture<Void> combinedFuture = productFuture.thenCombine(stockFuture,
+                (product, isStockAvailable) -> {
 
+                    if (!isStockAvailable) {
+                        throw new RuntimeException("Insufficient stock");
+                    }
+
+                    System.out.println("STEP 2: Product OK");
+
+                    Cart cart = getCartById(cartId);
+                    if (cart == null) {
+                        throw new RuntimeException("Cart not found");
+                    }
+
+                    System.out.println("STEP 3: Cart OK");
+
+                    CartItem item = new CartItem();
+                    item.setProductId(Long.valueOf(productId));
+                    item.setQuantity(quantity);
+                    item.setCart(cart);
+
+                    cartItemRepository.save(item);
+                    System.out.println("STEP 4: Item saved");
+
+                    cartevent event = new cartevent(cartId, productId, quantity);
+                    kafkaProducerService.sendCartEvent(event);
+
+                    System.out.println("STEP 5: Kafka sent");
+
+                    return null;
+                });
+
+        // ✅ Wait for completion
+        combinedFuture.join();
     }
+
+    // ✅ Other methods (unchanged)
 
     @Override
     public Cart createCart(Integer userId) {
