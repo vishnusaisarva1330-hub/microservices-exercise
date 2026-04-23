@@ -1,6 +1,6 @@
 package com.example.entity;
 
-//package com.example.productservice.entity;
+//package com.example.product-service.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
