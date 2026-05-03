@@ -10,4 +10,5 @@ public interface cartrepository extends JpaRepository<Cart, Integer> {
 
     Cart save(Cart cart);
 
+    Optional<Object> findByUserId(long l);
 }

@@ -1,4 +1,5 @@
 package com.example.service;
+import com.example.dto.productrequest;
 import com.example.entity.Product;
 import com.example.repository.ProductRepository;
 import org.springframework.data.domain.*;
@@ -31,6 +32,14 @@ public class productserviceImpl implements productservice {
     }
 
 
+    @Override
+    public Product createProduct(productrequest request) {
+        Product product = new Product();
+        product.setName(request.getName());
+        product.setPrice(request.getPrice());
+        product.setStock(request.getStock());
+        return productRepository.save(product);
+    }
 
     @Override
     public Product createProduct(Product product) {

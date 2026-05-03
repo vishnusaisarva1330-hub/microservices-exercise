@@ -1,4 +1,5 @@
 package com.example.service;
+import com.example.dto.productrequest;
 import com.example.entity.Product;
 import org.springframework.data.domain.Page;
 
@@ -7,7 +8,7 @@ import java.util.List;
 public interface productservice {
 
 
-
+    Product createProduct(productrequest request);
     Product createProduct(Product product);
 
     Product getProductById(Integer id);

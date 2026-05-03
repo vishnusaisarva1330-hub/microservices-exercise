@@ -1,128 +1,244 @@
-
 package com.example.service;
 
+import com.example.dto.cartitemrequest;
 import com.example.dto.ProductDTO;
-import com.example.dto.cartevent;
+import com.example.exception.badrequestexception;
+import com.example.exception.resourcenotfoundexception;
 import com.example.model.Cart;
 import com.example.model.CartItem;
-import com.example.repository.cartrepository;
 import com.example.repository.cartitemrepository;
+import com.example.repository.cartrepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 @Service
+@Slf4j
 public class cartserviceimpl implements cartservice {
 
     private final cartrepository cartRepository;
     private final cartitemrepository cartItemRepository;
     private final WebClient webClient;
-    private final kafkaproducerservice kafkaProducerService;
 
-    // ✅ Constructor using WebClient.Builder
     public cartserviceimpl(cartrepository cartRepository,
                            cartitemrepository cartItemRepository,
-                           WebClient.Builder webClientBuilder,
-                           kafkaproducerservice kafkaProducerService) {
+                           WebClient webClient) {
 
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
-        this.webClient = webClientBuilder.baseUrl("http://localhost:8081").build();
-        this.kafkaProducerService = kafkaProducerService;
+        this.webClient = webClient;
     }
 
-    // ✅ Async Product Fetch
-    public CompletableFuture<ProductDTO> getProductAsync(Integer productId) {
-        return CompletableFuture.supplyAsync(() ->
-                webClient.get()
-                        .uri("/api/products/" + productId)
-                        .retrieve()
-                        .bodyToMono(ProductDTO.class)
-                        .block()
-        );
+    // ✅ GET PRODUCT FROM PRODUCT SERVICE
+    private ProductDTO getProduct(Integer productId) {
+        return webClient.get()
+                .uri("/api/products/" + productId)
+                .retrieve()
+                .onStatus(status -> status.is4xxClientError(),
+                        response -> Mono.error(new resourcenotfoundexception("Product not found")))
+                .onStatus(status -> status.is5xxServerError(),
+                        response -> Mono.error(new RuntimeException("Product service error")))
+                .bodyToMono(ProductDTO.class)
+                .block();
     }
 
-    // ✅ Main Method (Async + DB + Kafka)
+    // ✅ MAIN METHOD
     @Override
-    public void addToCart(Integer cartId, Integer productId, Integer quantity) {
+    public void addToCart(cartitemrequest request) {
 
-        System.out.println("STEP 1: Start");
+        log.info("Adding product {} with quantity {} to cart",
+                request.getProductId(), request.getQuantity());
 
-        CompletableFuture<ProductDTO> productFuture = getProductAsync(productId);
+        // ✅ Quantity validation
+        if (request.getQuantity() <= 0) {
+            throw new badrequestexception("Quantity must be greater than zero");
+        }
 
-        CompletableFuture<Boolean> stockFuture = productFuture.thenApplyAsync(product -> {
-            if (product == null) {
-                throw new RuntimeException("Product not found");
-            }
-            return product.getStock() >= quantity;
-        });
+        // 🔥 CALL PRODUCT SERVICE
+        ProductDTO product = getProduct(request.getProductId());
+        if (product == null) {
+            log.error("Product not found: {}", request.getProductId());
+            throw new resourcenotfoundexception("Product not found");
+        }
+        // 🚨 STOCK VALIDATION
+        if (product.getStock() < request.getQuantity()) {
+            throw new badrequestexception("Insufficient stock");
+        }
 
-        CompletableFuture<Void> combinedFuture = productFuture.thenCombine(stockFuture,
-                (product, isStockAvailable) -> {
+        Long userId = 101L;
 
-                    if (!isStockAvailable) {
-                        throw new RuntimeException("Insufficient stock");
-                    }
-
-                    System.out.println("STEP 2: Product OK");
-
-                    Cart cart = getCartById(cartId);
-                    if (cart == null) {
-                        throw new RuntimeException("Cart not found");
-                    }
-
-                    System.out.println("STEP 3: Cart OK");
-
-                    CartItem item = new CartItem();
-                    item.setProductId(Long.valueOf(productId));
-                    item.setQuantity(quantity);
-                    item.setCart(cart);
-
-                    cartItemRepository.save(item);
-                    System.out.println("STEP 4: Item saved");
-
-                    cartevent event = new cartevent(cartId, productId, quantity);
-                    kafkaProducerService.sendCartEvent(event);
-
-                    System.out.println("STEP 5: Kafka sent");
-
-                    return null;
+        // ✅ GET OR CREATE CART
+        Cart cart = (Cart) cartRepository.findByUserId(userId)
+                .orElseGet(() -> {
+                    Cart newCart = new Cart();
+                    newCart.setUserId(userId);
+                    return cartRepository.save(newCart);
                 });
 
-        // ✅ Wait for completion
-        combinedFuture.join();
+        // ✅ CREATE ITEM
+        CartItem item = CartItem.builder()
+                .productId(Long.valueOf(request.getProductId()))
+                .quantity(request.getQuantity())
+                .cart(cart)
+                .build();
+
+        // ✅ SAVE
+        cartItemRepository.save(item);
+
+        log.info("Successfully added product {} to cart {}",
+                request.getProductId(), cart.getId());
     }
 
-    // ✅ Other methods (unchanged)
+    // OPTIONAL METHODS (keep if needed)
 
     @Override
     public Cart createCart(Integer userId) {
-        Cart cart = new Cart();
-        cart.setUserId(Long.valueOf(userId));
-        return cartRepository.save(cart);
+        return (Cart) cartRepository.findByUserId(userId.longValue())
+                .orElseGet(() -> {
+                    Cart cart = new Cart();
+                    cart.setUserId(userId.longValue());
+                    return cartRepository.save(cart);
+                });
     }
 
     @Override
     public Cart getCartById(Integer cartId) {
-        return cartRepository.findById(cartId).orElse(null);
-    }
-
-    @Override
-    public Cart addItemToCart(Integer cartId, CartItem item) {
-        Cart cart = getCartById(cartId);
-        if (cart != null) {
-            item.setCart(cart);
-            cartItemRepository.save(item);
-            return getCartById(cartId);
-        }
-        return null;
+        return cartRepository.findById(cartId)
+                .orElseThrow(() -> new RuntimeException("Cart not found"));
     }
 
     @Override
     public List<CartItem> getCartItems(Integer cartId) {
-        Cart cart = getCartById(cartId);
-        return cart != null ? cart.getItems() : null;
+        return cartItemRepository.findByCart_Id(cartId.longValue());
+    }
+
+    @Override
+    public Cart addItemToCart(Integer cartId, CartItem item) {
+        return null;
+    }
+
+    @Override
+    public void addToCart(Integer cartId, Integer productId, Integer quantity) {
+        // not used
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//package com.example.service;
+//
+//import com.example.dto.cartitemrequest;
+//import com.example.model.Cart;
+//import com.example.model.CartItem;
+//import com.example.repository.cartitemrepository;
+//import com.example.repository.cartrepository;
+//import lombok.extern.slf4j.Slf4j;
+//import org.springframework.stereotype.Service;
+//
+//import java.util.List;
+//
+//@Service
+//@Slf4j
+//public class cartserviceimpl implements cartservice {
+//
+//    private final cartrepository cartRepository;
+//    private final cartitemrepository cartItemRepository;
+//
+//    public cartserviceimpl(cartrepository cartRepository,
+//                           cartitemrepository cartItemRepository) {
+//        this.cartRepository = cartRepository;
+//        this.cartItemRepository = cartItemRepository;
+//    }
+//
+//    // ✅ CREATE OR GET CART (IMPORTANT FIX)
+//    @Override
+//    public Cart createCart(Integer userId) {
+//
+//        return (Cart) cartRepository.findByUserId(userId.longValue())
+//                .orElseGet(() -> {
+//                    Cart cart = new Cart();
+//                    cart.setUserId(userId.longValue());
+//                    return cartRepository.save(cart);
+//                });
+//    }
+//
+//    // ✅ GET CART
+//    @Override
+//    public Cart getCartById(Integer cartId) {
+//        return cartRepository.findById(cartId)
+//                .orElseThrow(() -> new RuntimeException("Cart not found"));
+//    }
+//
+//    // ✅ GET CART ITEMS
+//    @Override
+//    public List<CartItem> getCartItems(Integer cartId) {
+//        return cartItemRepository.findByCartId(cartId);
+//    }
+//
+//    // ❌ NOT USED (KEEP EMPTY OR REMOVE)
+//    @Override
+//    public Cart addItemToCart(Integer cartId, CartItem item) {
+//        return null;
+//    }
+//
+//    @Override
+//    public void addToCart(Integer cartId, Integer productId, Integer quantity) {
+//        // optional
+//    }
+//
+//    // 🔥 MAIN METHOD (FIXED)
+//    @Override
+//    public void addToCart(cartitemrequest request) {
+//
+//        log.info("Adding product {} with quantity {} to cart",
+//                request.getProductId(), request.getQuantity());
+//
+//        // ✅ Validation
+//        if (request.getQuantity() <= 0) {
+//            log.error("Invalid quantity: {}", request.getQuantity());
+//            throw new RuntimeException("Quantity must be greater than zero");
+//        }
+//
+//        Long userId = 101L; // 🔥 later replace with actual user
+//
+//        // ✅ Get or create cart
+//        Cart cart = (Cart) cartRepository.findByUserId(userId)
+//                .orElseGet(() -> {
+//                    Cart newCart = new Cart();
+//                    newCart.setUserId(userId);
+//                    return cartRepository.save(newCart);
+//                });
+//
+//        // ✅ Create CartItem
+//        CartItem item = CartItem.builder()
+//                .productId(Long.valueOf(request.getProductId()))
+//                .quantity(request.getQuantity())
+//                .cart(cart)   // 🔥 THIS FIXES NULL ISSUE
+//                .build();
+//
+//        // ✅ Save
+//        cartItemRepository.save(item);
+//
+//        log.info("Successfully added product {} to cart {}",
+//                request.getProductId(), cart.getId());
+//    }
+//}
